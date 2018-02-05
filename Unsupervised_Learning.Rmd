@@ -1,0 +1,201 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+###open the library needed
+```{r}
+require(rvest)
+require(magrittr)
+require(plyr)
+require(dplyr)
+require(reshape2)
+require(ggplot2)
+require(FactoMineR)
+require(factoextra)#for clustering analysis
+require(cluster)
+require(useful)
+```
+
+###Import data: Web Scrapping (1)
+```{r}
+# Import the first data set from the site
+url1 <- "https://en.wikipedia.org/wiki/World_Happiness_Report"
+happy <- read_html(url1) %>% 
+        html_nodes("table") %>% 
+        extract2(1) %>% 
+        html_table()
+
+# inspect imported data structure 
+str(happy)
+```
+
+###Preprocess
+```{r}
+## Exclude columns with ranks and scores, retain the other columns
+happy <- happy[c(3,6:11)]
+### rename column headers by replacing space with underscore
+colnames(happy) <- gsub(" ", "_", colnames(happy), perl=TRUE)
+names(happy)
+
+## coerce character data columns to numeric
+happy[, 2:7] <- sapply(happy[, 2:7], as.numeric)
+```
+
+###Import data: Web Scrapping (2)
+```{r}
+### scrape social progress index data report from the site
+url2 <- "https://en.wikipedia.org/wiki/List_of_countries_by_Social_Progress_Index"
+social <- read_html(url2) %>% 
+     html_nodes("table") %>% 
+     .[[2]] %>% 
+     html_table(fill=T)
+# check imported data structure 
+str(social)
+```
+Unforturnately, wiki updated its content, so some information used in the original plan of this project are gone. Not a big deal, got it anyway.
+```{r}
+social <- read.csv("data/2015_SPI.csv")
+str(social)
+```
+
+###Preprocess
+```{r}
+### select the three columns and country as well 
+social <- social[c(1,4:6)]
+### rename column headers by replacing space with underscore
+colnames(social) <- gsub("\\.", "_", colnames(social), perl=TRUE)
+colnames(social) <- c("Country", "Basic_human_needs", "Foundation_of_wellbeing", "Opportunity")
+```
+
+###Unify country name
+```{r}
+### Standardize country names to confirm with country names in the map dataset
+happy$Country <- as.character(mapvalues(happy$Country, 
+                                         from = c("United States", "Côte d'Ivoire","Democratic Republic of Congo", "Congo", "Trinidad and Tobago"),
+                                         to=c("USA", "Ivory Cost","Democratic Republic of the Congo", "Democratic Republic of the Congo", "Trinidad")))
+
+
+### Standardize country names to confirm with country names in the map dataset
+social$Country <- as.character(mapvalues(social$Country, 
+                                         from = c("United States", "Côte d'Ivoire","Democratic Republic of Congo", "Congo", "Trinidad and Tobago"),
+                                         to=c("USA", "Ivory Cost","Democratic Republic of the Congo", "Democratic Republic of the Congo", "Trinidad")))
+
+```
+
+###Join the two data
+```{r}
+### perform left join, for happiness is the key concern
+soc.happy <- left_join(happy, social, by = c('Country' = 'Country'))
+### check for missing values in the combined data set
+mean(is.na(soc.happy[, 2:10]))
+```
+
+###Impute missing values: median imputation
+```{r}
+### median imputation
+for(i in 1:ncol(soc.happy[, 2:10])) {
+        soc.happy[, 2:10][is.na(soc.happy[, 2:10][,i]), i] <- median(soc.happy[, 2:10][,i], na.rm = TRUE)
+}
+### summary of the raw data
+summary(soc.happy[,2:10])
+```
+
+###Scale the data: range transformation
+```{r}
+## transform variables to a range of 0 to 1
+range_transform <- function(x) {
+     (x - min(x))/(max(x)-min(x))
+ }
+soc.happy[,2:10] <- as.data.frame(apply(soc.happy[,2:10], 2, range_transform))
+
+### summary of transformed data shows success of transformation
+summary(soc.happy[,2:10])
+```
+
+###Initial data exploration: correlation
+```{r}
+corr <- cor(soc.happy[, 2:10], method="pearson")
+ggplot(melt(corr, varnames=c("x", "y"), value.name="correlation"), 
+       aes(x=x, y=y)) +
+             geom_tile(aes(fill=correlation)) +
+             scale_fill_gradient2(low="green", mid="yellow", high="red",
+             guide=guide_colorbar(ticks=FALSE, barheight = 5),
+             limits=c(-1,1)) + 
+             theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+             labs(title="Heatmap of Correlation Matrix", 
+                  x=NULL, y=NULL)
+```
+
+###Dimension (or correlation) reduciton
+####Principal Component Analysis: PCA()
+```{r}
+### PCA
+soc.pca <- PCA(soc.happy[, 2:10], graph=FALSE)
+### scree plot
+fviz_screeplot(soc.pca, addlabels = TRUE, ylim = c(0, 65))
+### eigenvalue(>1)
+soc.pca$eig
+### Contributions of variables to principal components with eigenvalue > 1
+soc.pca$var$contrib[,1:2]
+```
+
+####Principal Component Analysis: prcomp()
+```{r}
+
+```
+
+###Applied clustering
+####NbClust()
+```{r}
+require(NbClust)
+nbc <- NbClust(soc.happy[, 2:10], distance="manhattan", 
+               min.nc=2, max.nc=30, method="ward.D", index='all')
+```
+So we proceed with k=2, i.e. divide countries into 2 clusters.
+```{r}
+set.seed(2018)
+pamK2 <- pam(soc.happy[, 2:10], diss=FALSE, 2, keep.data=TRUE)
+# Number of countries assigned in the three clusters
+fviz_silhouette(pamK2)
+
+## which countries were typical of each cluster
+soc.happy$Country[pamK2$id.med]
+```
+Plot them on the PC1-PC2 plane
+```{r}
+soc.happy['cluster'] <- as.factor(pamK2$clustering)
+
+fviz_pca_ind(soc.pca, 
+             label="none",
+             habillage = soc.happy$cluster, #color by cluster
+             palette = c("#00AFBB", "#E7B800", "#FC4E07", "#7CAE00", "#C77CFF", "#00BFC4"),
+             addEllipses=TRUE
+)
+```
+print them on the world map
+```{r}
+map.world <- map_data("world")
+# LEFT JOIN
+map.world_joined <- left_join(map.world, soc.happy, by = c('region' = 'Country'))
+ggplot() +
+        geom_polygon(data = map.world_joined, aes(x = long, y = lat, group = group, fill=cluster, color=cluster)) +
+        labs(title = "Applied Clustering World Happiness and Social Progress Index",
+             subtitle = "Based on data from:https://en.wikipedia.org/wiki/World_Happiness_Report and\n 
+             https://en.wikipedia.org/wiki/List_of_countries_by_Social_Progress_Index", 
+             x=NULL, y=NULL) +
+        coord_equal() +
+        theme(panel.grid.major=element_blank(),
+              panel.grid.minor=element_blank(),
+              axis.text.x=element_blank(),
+              axis.text.y=element_blank(),
+              axis.ticks=element_blank(),
+              panel.background=element_blank()
+        )
+```
+
+####kmeans()
+```{r}
+
+```
+

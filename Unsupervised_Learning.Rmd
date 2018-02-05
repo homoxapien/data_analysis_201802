@@ -55,7 +55,7 @@ str(social)
 ```
 Unforturnately, wiki updated its content, so some information used in the original plan of this project are gone. Not a big deal, got it anyway.
 ```{r}
-social <- read.csv("data/2015_SPI.csv")
+social <- read.csv("data/2017_SPI.csv")
 str(social)
 ```
 
@@ -152,19 +152,19 @@ require(NbClust)
 nbc <- NbClust(soc.happy[, 2:10], distance="manhattan", 
                min.nc=2, max.nc=30, method="ward.D", index='all')
 ```
-So we proceed with k=2, i.e. divide countries into 2 clusters.
+So we proceed with k=3, i.e. divide countries into 3 clusters. (K=2 is also fine)
 ```{r}
 set.seed(2018)
-pamK2 <- pam(soc.happy[, 2:10], diss=FALSE, 2, keep.data=TRUE)
+pamK3 <- pam(soc.happy[, 2:10], diss=FALSE, 3, keep.data=TRUE)
 # Number of countries assigned in the three clusters
-fviz_silhouette(pamK2)
+fviz_silhouette(pamK3)
 
 ## which countries were typical of each cluster
-soc.happy$Country[pamK2$id.med]
+soc.happy$Country[pamK3$id.med]
 ```
 Plot them on the PC1-PC2 plane
 ```{r}
-soc.happy['cluster'] <- as.factor(pamK2$clustering)
+soc.happy['cluster'] <- as.factor(pamK3$clustering)
 
 fviz_pca_ind(soc.pca, 
              label="none",

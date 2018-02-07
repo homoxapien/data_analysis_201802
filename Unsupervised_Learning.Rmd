@@ -142,15 +142,114 @@ soc.pca$var$contrib[,1:2]
 
 ####Principal Component Analysis: prcomp()
 ```{r}
+soc.happy.pr <- prcomp(soc.happy[,-1])
+summary(soc.happy.pr)
+#biplot(soc.happy.pr)
+### scree plot
+pr.var <- soc.happy.pr$sdev^2
+pr.tve <- pr.var / sum(pr.var)
+plot(pr.tve, xlab="Dimensions", ylab="% of Explained Variance", main="Scree plot", ylim=c(0,1), type="b")
+```
+PCA() scales the data by default(i.e. normalization), however prcomp() doesn't, and therefore yields different result. I didn't turn on the scale argument in prcomp just to compare different approaches for scaling. After all, range-transformation is applied to the data already, meaning all the variables have range=1.
+
+###Cluster Tendency
+Before clustering, the first concern should be: Are the data clusterable? After all, if the data are randomly (uniformly) distributed, it doesn't make any sense even Kmeans, Kmedoid(PAM), CLARA, hierarchical clustering or any clustering method applied, "successfully" partition the data. (Of course, that's what they are for)
+
+Here presented are two ways of meassuring cluster tendency of the data: Hopkins statistic and Visual Assessment of cluster Tendency(VAT).
+
+####Hopkins Statistic
+H0: the data are uniformly distributed(i.e. no meaningful clusters)
+Ha: the data are not uniformly distributed
+```{r}
+library(factoextra)
+temp <- get_clust_tendency(soc.happy[,-1], n=nrow(soc.happy)-1, graph=FALSE)
+### hopkins_stat
+ifelse(temp$hopkins_stat>0.75, "Ha", "H0")
 
 ```
+The statistic doesn't support clustering...
+
+####Visual Assessment of cluster Tendency(VAT)
+Euclidean distance is selected as a meassurement of dissimilarity.
+```{r}
+### from get_clust_tendency
+temp <- get_clust_tendency(soc.happy[,-1], n=nrow(soc.happy)-1, graph=TRUE)
+temp$plot
+
+### another way
+library(factoextra)
+fviz_dist(dist(soc.happy[,-1]), show_labels=TRUE)
+```
+However, in the VAT image, along the diagonal, one can peek at least two red squares, indicating may be two or more clusters. Here the value represents dissimilarity. The lower the dissimilarity, the higher the similarities, and thus the "redder", the closer.
 
 ###Applied clustering
+So I start clustering, but the next question is: What is the optimal number of clusters in the data? Here presented are the three popular methods: Elbow Method(wss), AVerage SILhouette method and Gap statistic, combined with three clustering algorithms: Kmeans, PAM and hierarchical clustering. At last, the hands-down NbClust() is introduced.
+
+####Elbow method:
+(1) Kmeans
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], kmeans, method="wss") + 
+  geom_vline(xintercept=3, linetype=2)
+```
+(2)PAM
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], pam, method="wss") + 
+  geom_vline(xintercept=3, linetype=2)
+```
+(3)Hierarchical Clustering
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], hcut, method="wss") + 
+  geom_vline(xintercept=3, linetype=2)
+```
+
+####Average silhouette method:
+(1)Kmeans
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], kmeans, method="silhouette")
+```
+(2)PAM
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], pam, method="silhouette")
+```
+(3)Hierarchical Clustering
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], hcut, method="silhouette")
+```
+
+####Gap statistic:
+(1)Kmeans
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], kmeans, method="gap_stat")
+```
+(2)PAM
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], pam, method="gap_stat")
+```
+(3)Hierarchical Clustering
+```{r}
+library(factoextra)
+fviz_nbclust(soc.happy[,-1], hcut, method="gap_stat")
+```
+Now, the result of the election is:
+- K=2 : 3 votes
+- K=3 : 4 votes
+- K=8 : 1 vote
+- K=9 : 1 vote. 
+So let K=3.
+
 ####NbClust()
 ```{r}
 require(NbClust)
-nbc <- NbClust(soc.happy[, 2:10], distance="manhattan", 
-               min.nc=2, max.nc=30, method="ward.D", index='all')
+nbc <- NbClust(soc.happy[, 2:10], distance="euclidean", 
+               min.nc=2, max.nc=10, method="ward.D", index='all')
 ```
 So we proceed with k=3, i.e. divide countries into 3 clusters. (K=2 is also fine)
 ```{r}
@@ -192,10 +291,5 @@ ggplot() +
               axis.ticks=element_blank(),
               panel.background=element_blank()
         )
-```
-
-####kmeans()
-```{r}
-
 ```
 
